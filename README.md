@@ -1,0 +1,3 @@
+install using requirements
+
+This is a tkinter project, will be adding summons, Gestures , etc, perhaps os Control...
