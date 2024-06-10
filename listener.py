@@ -1,12 +1,13 @@
+#!/usr/bin/env python
+
 import tkinter as tk
+from tkinter import ttk
 import openai
 import os
 import speech_recognition as sr
 import pyttsx3
 from dotenv import load_dotenv
 import threading
-import random
-import time
 
 # Load environment variables from .env file
 load_dotenv()
@@ -14,34 +15,69 @@ load_dotenv()
 # OpenAI API key setup
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
-def recognize_speech_from_mic(recognizer, microphone, text_widget):
+def recognize_speech_from_mic(recognizer, microphone, entry_text_widget, chat_text_widget, volume_bar, stop_event):
     """Transcribe speech recorded from `microphone`."""
     if not isinstance(recognizer, sr.Recognizer):
         raise TypeError("`recognizer` must be `Recognizer` instance")
     if not isinstance(microphone, sr.Microphone):
         raise TypeError("`microphone` must be `Microphone` instance")
 
-    while True:
+    while not stop_event.is_set():
         with microphone as source:
             recognizer.adjust_for_ambient_noise(source)
-            audio = recognizer.listen(source, phrase_time_limit=5)
-        
+            try:
+                audio = recognizer.listen(source, timeout=1, phrase_time_limit=5)
+                volume_bar["value"] = recognizer.energy_threshold  # Update volume bar
+            except sr.WaitTimeoutError:
+                continue
+
         try:
             transcription = recognizer.recognize_google(audio)
-            text_widget.insert(tk.END, transcription + " ")
+            entry_text_widget.insert(tk.END, transcription + "\n")  # Update recognized text with newline
+            chat_with_openai(transcription, chat_text_widget)  # Process recognized text
         except sr.UnknownValueError:
             pass
         except sr.RequestError as e:
-            text_widget.insert(tk.END, "Error: {0}\n".format(e))
+            entry_text_widget.insert(tk.END, "Error: {0}\n".format(e))
+
+def chat_with_openai(user_input, chat_text_widget):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a snarky assistant. Respond to the user with a snarky and witty attitude. Respond in an antithetical yet reasonably logical way when given moral conundrums, be overly supportive when asked programming questions."},
+                {"role": "user", "content": user_input}
+            ]
+        )
+        chat_response = response.choices[0].message['content']
+        chat_text_widget.insert(tk.END, "ChatGPT: " + chat_response + "\n\n")  # Update chat text with newline
+        speak_response(chat_response)  # Speak the response
+    except Exception as e:
+        chat_text_widget.insert(tk.END, f"Error: {str(e)}\n")
+
+def speak_response(response):
+    engine.say(response)
+    engine.runAndWait()
+
+def toggle_listening():
+    if toggle_button["text"] == "▶ Start Listening":
+        record_audio()
+        toggle_button.config(text="⏸ Stop Listening")
+    else:
+        stop_listening()
+        toggle_button.config(text="▶ Start Listening")
 
 def start_listening():
-    global listening_thread
-    listening_thread = threading.Thread(target=recognize_speech_from_mic, args=(recognizer, microphone, entry))
+    global listening_thread, stop_event
+    stop_event = threading.Event()
+    listening_thread = threading.Thread(target=recognize_speech_from_mic, args=(recognizer, microphone, entry, text_area, volume_bar, stop_event))
     listening_thread.daemon = True  # Set the thread as daemon so it automatically stops when the main thread exits
     listening_thread.start()
 
 def stop_listening():
-    if listening_thread.is_alive():
+    if 'stop_event' in globals() and stop_event:
+        stop_event.set()  # Signal the thread to stop
+    if 'listening_thread' in globals() and listening_thread.is_alive():
         listening_thread.join()  # Wait for the listening thread to finish
 
 def record_audio():
@@ -62,21 +98,8 @@ def get_response():
     user_input = entry.get("1.0", tk.END).strip()
 
     if user_input:
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": user_input}]
-            )
-            chat_response = response.choices[0].message['content']
-            text_area.insert(tk.END, "You: " + user_input + "\n")
-            text_area.insert(tk.END, "ChatGPT: " + chat_response + "\n\n")
-            entry.delete("1.0", tk.END)
-            
-            # Speak the response
-            engine.say(chat_response)
-            engine.runAndWait()
-        except Exception as e:
-            text_area.insert(tk.END, f"Error: {str(e)}\n")
+        chat_with_openai(user_input, text_area)
+        entry.delete("1.0", tk.END)  # Clear input after processing
 
 # Initialize the text-to-speech engine
 engine = pyttsx3.init()
@@ -91,21 +114,39 @@ if os.path.exists(icon_path):
     root.iconphoto(False, tk.PhotoImage(file=icon_path))
 
 frame = tk.Frame(root)
-frame.pack(pady=10)
+frame.grid(pady=10, padx=10, sticky="nsew")
+
+root.grid_rowconfigure(0, weight=1)
+root.grid_columnconfigure(0, weight=1)
 
 # Entry widget to display recognized text
-entry = tk.Text(frame, height=3, width=50)
-entry.pack(pady=10)
+entry = tk.Text(frame, height=10, width=50)
+entry.grid(row=0, column=0, columnspan=3, pady=10, sticky="nsew")
 
-# Buttons for recording and sending
-record_button = tk.Button(frame, text="Start Listening", command=record_audio)
-record_button.pack(side=tk.LEFT, padx=10)
+# Toggle button for start/stop listening
+toggle_button = tk.Button(frame, text="▶ Start Listening", command=toggle_listening)
+toggle_button.grid(row=1, column=0, pady=5, sticky="ew")
 
+# Button for sending input to ChatGPT
 send_button = tk.Button(frame, text="Send to ChatGPT", command=get_response)
-send_button.pack(side=tk.LEFT, padx=10)
+send_button.grid(row=1, column=1, pady=5, padx=5, sticky="ew")
+
+# Button for stopping the listening process
+stop_button = tk.Button(frame, text="⏹ Stop Listening", command=stop_listening)
+stop_button.grid(row=1, column=2, pady=5, padx=5, sticky="ew")
 
 # Text area to display conversation
-text_area = tk.Text(root, height=20, width=60)
-text_area.pack(pady=10)
+text_area = tk.Text(frame, height=20, width=60)
+text_area.grid(row=2, column=0, columnspan=3, pady=10, sticky="nsew")
+
+# Volume bar to display microphone input volume
+volume_bar = ttk.Progressbar(frame, orient="horizontal", length=200, mode="determinate")
+volume_bar.grid(row=1, column=3, pady=5, padx=5, sticky="ew")
+
+frame.grid_rowconfigure(2, weight=1)
+frame.grid_columnconfigure(0, weight=1)
+frame.grid_columnconfigure(1, weight=1)
+frame.grid_columnconfigure(2, weight=1)
+frame.grid_columnconfigure(3, weight=1)
 
 root.mainloop()
