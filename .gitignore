@@ -1,0 +1,60 @@
+# Ignore virtual environment directories
+venv/
+env/
+ENV/
+myenv/
+.venv/
+.env/
+
+# Ignore Python bytecode and compiled files
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Ignore environment variable files
+.env
+.env.*
+
+# Ignore editor-specific files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Ignore macOS-specific files
+.DS_Store
+
+# Ignore logs and database files
+*.log
+*.sqlite3
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore coverage reports
+htmlcov/
+.coverage
+.tox/
+.nox/
+
+# Ignore build and distribution directories
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Ignore pytest cache
+.pytest_cache/
+
+# Ignore mypy cache
+.mypy_cache/
+
+# Ignore the __pycache__ directory at the root level
+/__pycache__/
+
+# Ignore node_modules directory (if using Node.js)
+node_modules/
+
+# Ignore compiled shared objects
+*.so
